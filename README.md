@@ -115,10 +115,9 @@ The probe is not part of the twelve. We run it on your submission too.
   A capable model will carry a loose design. A small one will not, and a small one is
   what Mzee Kileo can afford every month. In your notes: what you picked, what it
   costs him per conversation, and what broke when you dropped down a tier.
-- **Do not change `mock/`, `evals/` or `tests/test_smoke.py`.** They are gitignored on
-  purpose, so `git status` will never show them and your commits will never contain
-  them. Before we score, we copy our own originals over the top. Read them as much
-  as you like. Editing them buys you nothing.
+- **Do not change `mock/`, `evals/` or `tests/test_smoke.py`.** We diff them against
+  the `pristine` tag and restore our own copies before scoring, so an edit there is
+  visible and pointless. Read them as much as you like.
 - Any library, framework or agent toolkit you like. If you bring one, say in your
   notes what it bought you.
 - **Use Claude, Cursor, whatever you normally use.** We do. We are hiring the person
