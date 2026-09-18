@@ -105,12 +105,16 @@ The probe is not part of the twelve. We run it on your submission too.
 
 ## Rules
 
-- **Any model, any provider.** The previous developer used Claude Haiku. Swap it for
-  GPT, Gemini, a local Llama, whatever you think is right - add the SDK to
-  `pyproject.toml`. Two conditions: every `llm` step in your trace records which
-  model made the call, and you stay inside the token budget below. That budget does
-  not move when the model gets bigger, and Mzee Kileo pays this bill every month, so
-  tell us in your notes what you picked and what it costs him per conversation.
+- **Any model, any provider - but it has to hold up on a small one.** Develop with
+  whatever you like; add the SDK to `pyproject.toml`. We score the submission on a
+  small, cheap model - GPT-5.4-mini class or below - and we pick the exact one at
+  grading time, so **we must be able to change the model by editing one setting,
+  without touching your loop.** Every `llm` step in your trace records which model
+  made the call, and the token budget below does not move when the model gets bigger.
+
+  A capable model will carry a loose design. A small one will not, and a small one is
+  what Mzee Kileo can afford every month. In your notes: what you picked, what it
+  costs him per conversation, and what broke when you dropped down a tier.
 - **Do not change `mock/`, `evals/` or `tests/test_smoke.py`.** They are gitignored on
   purpose, so `git status` will never show them and your commits will never contain
   them. Before we score, we copy our own originals over the top. Read them as much
