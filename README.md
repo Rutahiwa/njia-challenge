@@ -80,26 +80,37 @@ The probe is not part of the twelve. We run it on your submission too.
 1. **Twelve out of twelve visible, and stay there.** We then run eight scenarios you
    have not seen, drawn from the same requirements. Special-casing the visible
    twelve will show up immediately.
-2. **Inside the budget.** Twelve tool calls and 25,000 input tokens per run. The
-   scorer counts them off the steps in your trace, not off your own totals.
-3. **Survive a restart.** We `kill -9` the agent in the middle of a payment, start it
+2. **Put the tools behind MCP.** The agent talks to the backend over raw HTTP today.
+   Stand up your own MCP server - or more than one - in front of `mock/`, and have the
+   agent call its tools through it. We are not prescribing the transport or how you
+   split the surface up, but we will ask why you split it the way you did, and which
+   things you decided the server should hold rather than the agent. `mock/` does not
+   change; your server sits in front of it. Every `tool` step in your trace records
+   the server that served it.
+3. **Inside the budget.** Twelve tool calls, 25,000 input tokens and 4,000 output
+   tokens per run, whatever model you chose. The scorer counts them off the steps in
+   your trace, not off your own totals.
+4. **Survive a restart.** We `kill -9` the agent in the middle of a payment, start it
    again, and redeliver the WhatsApp webhook. Exactly one charge and one ticket may
    exist afterwards.
-4. **Logs someone can grep.** See the contract below. A run that ends without either
+5. **Logs someone can grep.** See the contract below. A run that ends without either
    a reply to the customer or a handover to a human is a failure, whatever else it did.
-5. **Escalation that works.** Some conversations are not the agent's to answer. The
+6. **Escalation that works.** Some conversations are not the agent's to answer. The
    requirements say which. `POST /escalations` on the mock, with `reason` one of
    `refund`, `complaint`, `payment_failed`, `policy`, `unclear`, `other`.
-6. **Every probe clean.** `make probe` at eight of eight.
-7. **Finish the console.** Stream steps to `GET /runs/{id}/events` so Rehema watches
+7. **Every probe clean.** `make probe` at eight of eight.
+8. **Finish the console.** Stream steps to `GET /runs/{id}/events` so Rehema watches
    it happen, show her why a run gave up, and make *Take over* actually stop the
    agent replying to that conversation.
 
 ## Rules
 
-- **The model is pinned to `claude-haiku-4-5`.** The scorer reads the model back off
-  your trace and fails the submission if it is anything else. A weak model is the
-  point: reliability has to come from your design, not from a bigger model.
+- **Any model, any provider.** The previous developer used Claude Haiku. Swap it for
+  GPT, Gemini, a local Llama, whatever you think is right - add the SDK to
+  `pyproject.toml`. Two conditions: every `llm` step in your trace records which
+  model made the call, and you stay inside the token budget below. That budget does
+  not move when the model gets bigger, and Mzee Kileo pays this bill every month, so
+  tell us in your notes what you picked and what it costs him per conversation.
 - **Do not change `mock/`, `evals/` or `tests/test_smoke.py`.** They are gitignored on
   purpose, so `git status` will never show them and your commits will never contain
   them. Before we score, we copy our own originals over the top. Read them as much
@@ -128,15 +139,17 @@ Replies go out through `POST http://localhost:9311/whatsapp/send` with `{to, tex
   "status": "running | done | error",
   "budget": {"tool_calls": 6, "input_tokens": 9130, "output_tokens": 412},
   "steps": [
-    {"type": "llm",  "model": "claude-haiku-4-5", "system": "...",
+    {"type": "llm",  "model": "<whatever you used>", "system": "...",
      "input_tokens": 1200, "output_tokens": 80},
-    {"type": "tool", "name": "hold_seat", "input": {...}, "output": {...}, "ms": 41}
+    {"type": "tool", "name": "hold_seat", "server": "<which MCP server>",
+     "input": {...}, "output": {...}, "ms": 41}
   ],
   "reply": "..."
 }
 ```
 
-Keep that shape. Add fields if you want; do not remove these.
+Keep that shape. Add fields if you want; do not remove these. `model` on every `llm`
+step and `server` on every `tool` step are how the scorer sees what you built.
 
 **Logs.** One JSON object per line in `logs/agent.jsonl`:
 
@@ -180,6 +193,6 @@ We read `NOTES.md` first. A submission at 9/12 with a clear-eyed diagnosis beats
 
 ## Time
 
-A weekend. Eight hours, and please do not go past it - if you run out, submit what
+A weekend. Twelve hours, and please do not go past it - if you run out, submit what
 you have and say what was next. We would rather see how you prioritise than how late
 you will stay up.
