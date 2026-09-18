@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+logs/
+
+# Graded as shipped. We drop our own copies over the top before scoring, so
+# editing these locally buys you nothing - but do read them.
+mock/
+evals/
+tests/test_smoke.py
