@@ -15,6 +15,10 @@ ticket, on a good day. Run `make evals` and see what it does on a bad one.
 catch. Some of it is wrong in ways nothing catches, and you will only find it by
 reading. We know what is in there. We are interested in how much of it you find.
 
+He left documentation too - `ARCHITECTURE.md` and a handover note for whatever
+assistant picks this up. Both were written across three months and nobody went back
+over them afterwards.
+
 Everything except the model is mocked: no real money moves, no real WhatsApp
 account, no external service. The only call that leaves your machine goes to the
 Anthropic API on your own key. Budget about $3; send us the receipt and we refund it.
@@ -36,6 +40,8 @@ Rehema's console is at http://localhost:9310.
 
 ```
 REQUIREMENTS.md   what the client said. the spec
+ARCHITECTURE.md   how the last developer described his own work
+AGENTS.md         his notes for whoever, or whatever, picked it up next
 mock/             the fake world: trips, seats, mobile money, WhatsApp.  DO NOT MODIFY
 app/
   config.py       settings and limits
@@ -77,7 +83,7 @@ The probe is not part of the twelve. We run it on your submission too.
 
 ## What you are being asked for
 
-1. **Twelve out of twelve visible, and stay there.** We then run eight scenarios you
+1. **Twelve out of twelve visible, and stay there.** We then run nine scenarios you
    have not seen, drawn from the same requirements. Special-casing the visible
    twelve will show up immediately.
 2. **Put the tools behind MCP.** The agent talks to the backend over raw HTTP today.
