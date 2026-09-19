@@ -4,6 +4,7 @@ import os
 
 import httpx
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 MOCK_URL = os.getenv("MOCK_URL", "http://localhost:9311")
 SERVER_NAME = "njia-catalog"
@@ -12,6 +13,44 @@ mcp = MCPServer(
     name=SERVER_NAME,
     description="Read-only trip catalog and charge status queries",
 )
+
+
+RETRY_STATUSES = {429, 500, 502, 503, 504}
+RETRY_ATTEMPTS = 3
+
+_retry_log = []
+
+
+def get_and_clear_retries() -> list[dict]:
+    """Return retry events logged during MCP server calls, then clear."""
+    events = list(_retry_log)
+    _retry_log.clear()
+    return events
+
+
+def _get(path: str, **kwargs) -> dict:
+    """GET request to mock backend with retry and error handling."""
+    import json, time
+    for attempt in range(RETRY_ATTEMPTS):
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(f"{MOCK_URL}{path}", **kwargs)
+        if resp.status_code in RETRY_STATUSES:
+            _retry_log.append({
+                "code": "upstream_unavailable",
+                "attempt": attempt + 1,
+                "path": path,
+                "status": resp.status_code,
+            })
+            time.sleep(0.2)
+            continue
+        if resp.status_code >= 400:
+            try:
+                err = resp.json()
+                raise ToolError(json.dumps(err.get("error", err)))
+            except (ValueError, KeyError):
+                raise ToolError(json.dumps({"code": "http_error", "message": f"HTTP {resp.status_code}"}))
+        return resp.json()
+    raise ToolError(json.dumps({"code": "retries_exhausted", "message": "all retries failed"}))
 
 
 def _prefer_shabiby(trips: list[dict]) -> list[dict]:
@@ -48,27 +87,16 @@ def search_trips(origin: str, destination: str, date: str) -> dict:
     """
     all_trips: list[dict] = []
     offset = 0
-
-    with httpx.Client(timeout=30) as client:
-        while True:
-            params = {
-                "origin": origin,
-                "destination": destination,
-                "date": date,
-                "offset": offset,
-            }
-            resp = client.get(f"{MOCK_URL}/trips", params=params)
-            resp.raise_for_status()
-            data = resp.json()
-
-            trips_page = data.get("trips", [])
-            all_trips.extend(trips_page)
-
-            if not data.get("has_more", False):
-                break
-
-            offset += len(trips_page)
-
+    while True:
+        data = _get("/trips", params={
+            "origin": origin, "destination": destination,
+            "date": date, "offset": offset,
+        })
+        trips_page = data.get("trips", [])
+        all_trips.extend(trips_page)
+        if not data.get("has_more", False) or not trips_page:
+            break
+        offset += len(trips_page)
     all_trips = _prefer_shabiby(all_trips)
     return {"trips": all_trips}
 
@@ -83,12 +111,7 @@ def list_seats(trip_id: str) -> dict:
     Returns:
         Dictionary with trip_id, available seat list, and count.
     """
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(f"{MOCK_URL}/trips/{trip_id}/seats")
-        resp.raise_for_status()
-        data = resp.json()
-
-    return data
+    return _get(f"/trips/{trip_id}/seats")
 
 
 @mcp.tool()
@@ -101,16 +124,7 @@ def check_charge(charge_id: str) -> dict:
     Returns:
         Dictionary with charge_id, status, and amount in TZS.
     """
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(f"{MOCK_URL}/charges/{charge_id}")
-        resp.raise_for_status()
-        data = resp.json()
-
-    return {
-        "charge_id": charge_id,
-        "status": data["status"],
-        "amount_tzs": data["amount_tzs"],
-    }
+    return _get(f"/charges/{charge_id}")
 
 
 if __name__ == "__main__":

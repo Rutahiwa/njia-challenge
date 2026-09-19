@@ -28,6 +28,16 @@ def _stable_key(payload: dict) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()[:32]
 
 
+_retry_log = []
+
+
+def get_and_clear_retries() -> list[dict]:
+    """Return retry events logged during MCP server calls, then clear."""
+    events = list(_retry_log)
+    _retry_log.clear()
+    return events
+
+
 def _post(path: str, payload: dict, headers: dict | None = None) -> dict:
     idem_key = _stable_key(payload)
     for attempt in range(RETRY_ATTEMPTS):
@@ -39,6 +49,12 @@ def _post(path: str, payload: dict, headers: dict | None = None) -> dict:
             timeout=30,
         )
         if resp.status_code in RETRY_STATUSES:
+            _retry_log.append({
+                "code": "upstream_unavailable",
+                "attempt": attempt + 1,
+                "path": path,
+                "status": resp.status_code,
+            })
             time.sleep(RETRY_BACKOFF * (attempt + 1))
             continue
         return resp.json()

@@ -1,15 +1,17 @@
-"""Tool schemas handed to the model, and the executor behind them."""
+"""Tool schemas handed to the model, and the executor behind them.
+
+Tool calls are routed through the MCP server modules (in-process).
+The catalog server handles reads, the booking server handles writes.
+"""
 from __future__ import annotations
 
 import time
 
-import httpx
-
 from . import logs, recovery
-from .config import (MOCK_URL, PAY_KEY, RETRY_ATTEMPTS, RETRY_BACKOFF,
-                     RETRY_STATUSES)
-from .pricing import prefer_shabiby
 from .store import add_step
+
+from mcp_servers import catalog as _catalog_server
+from mcp_servers import booking as _booking_server
 
 TOOL_SERVERS = {
     "search_trips": "njia-catalog",
@@ -104,84 +106,50 @@ TOOLS = [
     },
 ]
 
-RETRYABLE = RETRY_STATUSES
-
-
-def _request(method: str, path: str, **kwargs) -> dict:
-    body = kwargs.get("json")
-    idem_key = None
-    # Skip idempotency for charge_customer (/charges POST) so retries create new charges
-    skip_idempotency = (path == "/charges" and method == "POST")
-    if body is not None and not skip_idempotency:
-        import hashlib, json as _json
-        canonical = _json.dumps({k: v for k, v in sorted(body.items()) if k != "idempotency_key"}, sort_keys=True)
-        idem_key = hashlib.sha256(canonical.encode()).hexdigest()[:32]
-    for attempt in range(RETRY_ATTEMPTS):
-        if body is not None and idem_key is not None:
-            body["idempotency_key"] = idem_key
-        with httpx.Client(base_url=MOCK_URL, timeout=30) as http:
-            response = http.request(method, path, **kwargs)
-        if response.status_code in RETRYABLE:
-            logs.error("tool.retry", code="upstream_unavailable",
-                       attempt=attempt + 1, path=path,
-                       status=response.status_code)
-            time.sleep(RETRY_BACKOFF)
-            continue
-        if response.status_code >= 400:
-            try:
-                return response.json()
-            except Exception:
-                return {"error": {"code": "http_error", "message": f"HTTP {response.status_code}"}}
-        return response.json()
-    return {"error": {"code": "retries_exhausted", "message": "all retries failed"}}
-
-
-def search_all(origin: str, destination: str, date: str) -> dict:
-    """Departures for a route on a date."""
-    found = []
-    offset = 0
-    max_pages = 10
-    for _ in range(max_pages):
-        page = _request("GET", "/trips", params={
-            "origin": origin, "destination": destination, "date": date, "offset": offset,
-        })
-        trips = page.get("trips", [])
-        found += trips
-        if not page.get("has_more", False) or not trips:
-            break
-        offset += len(trips)
-    return {"trips": found}
-
-
 def execute(run: dict, name: str, args: dict) -> dict:
+    """Route tool calls through the MCP server modules (in-process)."""
     started = time.time()
     server_name = TOOL_SERVERS.get(name, "unknown")
     try:
         if name == "search_trips":
-            result = search_all(args["origin"], args["destination"], args["date"])
-            result["trips"] = prefer_shabiby(result.get("trips", []))
+            result = _catalog_server.search_trips(args["origin"], args["destination"], args["date"])
         elif name == "list_seats":
-            result = _request("GET", f"/trips/{args['trip_id']}/seats")
-        elif name == "hold_seat":
-            result = _request("POST", "/holds", json=dict(args))
-        elif name == "charge_customer":
-            result = _request("POST", "/charges", json={
-                "hold_id": args["hold_id"], "msisdn": args["msisdn"],
-            }, headers={"X-Pay-Key": PAY_KEY})
+            result = _catalog_server.list_seats(args["trip_id"])
         elif name == "check_charge":
-            result = _request("GET", f"/charges/{args['charge_id']}")
+            result = _catalog_server.check_charge(args["charge_id"])
+        elif name == "hold_seat":
+            result = _booking_server.hold_seat(
+                args["trip_id"], args["seat"], args["passenger_name"],
+                args.get("passenger_age"), args.get("student_no"),
+            )
+        elif name == "charge_customer":
+            result = _booking_server.charge_customer(args["hold_id"], args["msisdn"])
         elif name == "issue_ticket":
-            result = _request("POST", "/tickets", json=dict(args))
+            result = _booking_server.issue_ticket(args["hold_id"], args["charge_id"])
         elif name == "escalate":
-            result = _request("POST", "/escalations", json=dict(args))
+            result = _booking_server.escalate(
+                args["conversation_id"], args["reason"], args["summary"],
+            )
         else:
-            result = {"ok": False}
+            result = {"error": {"code": "unknown_tool", "message": f"no tool named {name}"}}
     except Exception as exc:
-        logs.error("tool.crashed", exc, tool=name, code="tool_crashed")
-        result = {"error": {"code": "tool_crashed", "message": str(exc)}}
+        error_msg = str(exc)
+        try:
+            import json
+            parsed = json.loads(error_msg)
+            result = {"error": parsed}
+        except (json.JSONDecodeError, TypeError):
+            logs.error("tool.crashed", exc, tool=name, code="tool_crashed")
+            result = {"error": {"code": "tool_crashed", "message": error_msg}}
+
+    # Log any retries that happened inside the MCP servers
+    for retry_event in _catalog_server.get_and_clear_retries():
+        logs.error("tool.retry", tool=name, **retry_event)
+    for retry_event in _booking_server.get_and_clear_retries():
+        logs.error("tool.retry", tool=name, **retry_event)
 
     if "error" in result:
-        err = result["error"]
+        err = result["error"] if isinstance(result["error"], dict) else {"code": "unknown", "message": str(result["error"])}
         logs.error("tool.backend_error", tool=name, code=err.get("code"), message=err.get("message"))
 
     # Track payment lifecycle for crash recovery
@@ -195,7 +163,7 @@ def execute(run: dict, name: str, args: dict) -> dict:
         elif name == "issue_ticket" and "ticket_id" in result:
             recovery.complete_payment(cid, rid, ticket_id=result["ticket_id"])
     except Exception:
-        pass  # recovery is best-effort
+        pass
 
     add_step(run, type="tool", name=name, server=server_name, input=args, output=result,
              ms=round((time.time() - started) * 1000))
