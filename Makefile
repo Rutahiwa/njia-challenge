@@ -1,4 +1,4 @@
-.PHONY: install mock agent evals test
+.PHONY: install mock agent evals test catalog booking
 
 install:
 	uv sync
@@ -17,3 +17,9 @@ test:
 
 probe:
 	uv run python -m evals.probe $(P)
+
+catalog:
+	uv run python -m mcp_servers.catalog
+
+booking:
+	uv run python -m mcp_servers.booking
