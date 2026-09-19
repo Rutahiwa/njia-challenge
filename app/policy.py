@@ -5,16 +5,23 @@ from datetime import datetime
 
 ELDER_AGE = 60
 ADULT_AGE = 18
-NIGHT_HOUR = 21
+NIGHT_HOUR = 20
 
-REFUND_WORDS = ["refund", "money back", "cancel"]
-COMPLAINT_WORDS = ["rude", "late", "broke down", "complain"]
+REFUND_WORDS = [
+    "refund", "money back", "cancel",
+    "rudisha", "irudishwe", "pesa yangu", "fidia", "sitaki", "ondoa",
+]
+COMPLAINT_WORDS = [
+    "rude", "late", "broke down", "complain",
+    "mkorofi", "liliharibika", "kulalamika", "kuchelewa", "tatizo",
+    "dharau", "hasira", "dereva", "gari limeharibika",
+]
 
 _attempts: dict[str, int] = {}
 
 
 def is_elder(age) -> bool:
-    return age is not None and age > ELDER_AGE
+    return age is not None and age >= ELDER_AGE
 
 
 def is_minor(age) -> bool:
@@ -26,7 +33,7 @@ def is_night_trip(trip: dict) -> bool:
 
 
 def is_weekday(depart_at: str) -> bool:
-    return datetime.fromisoformat(depart_at).weekday() <= 5
+    return datetime.fromisoformat(depart_at).weekday() < 5
 
 
 def needs_human(text: str) -> str | None:
@@ -34,18 +41,18 @@ def needs_human(text: str) -> str | None:
     lowered = text.lower()
     for word in REFUND_WORDS:
         if word in lowered:
-            return "other"
+            return "refund"
     for word in COMPLAINT_WORDS:
         if word in lowered:
             return "complaint"
     return None
 
 
-def note_unclear(run_id: str) -> int:
+def note_unclear(conversation_id: str) -> int:
     """Count how many times we have failed to understand this customer."""
-    _attempts[run_id] = _attempts.get(run_id, 0) + 1
-    return _attempts[run_id]
+    _attempts[conversation_id] = _attempts.get(conversation_id, 0) + 1
+    return _attempts[conversation_id]
 
 
-def give_up(run_id: str) -> bool:
-    return _attempts.get(run_id, 0) > 2
+def give_up(conversation_id: str) -> bool:
+    return _attempts.get(conversation_id, 0) >= 2
