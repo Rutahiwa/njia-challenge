@@ -1,35 +1,5 @@
 # Decisions
 
-Fill this in. It is read alongside `NOTES.md` and weighted the same.
-
-Five choices below have no right answer. Each one is a real trade: the option you
-turn down would have been better in some situation, and that situation exists. Some
-of it is in the scenarios you cannot see.
-
-**We are not scoring which way you went.** We have built this both ways and neither
-is obviously correct. We are scoring whether you knew you were choosing, what you
-paid for it, and what would make you change your mind.
-
-Answer each in the same four parts. Half a page each is plenty. "I did not think
-about this one" is a real answer and scores better than a reconstruction.
-
----
-
-## The format
-
-**What I did.** One or two sentences.
-
-**What I turned down, and why it was tempting.** Name the alternative properly. If
-you cannot argue for it, you did not consider it.
-
-**What this costs me.** The case where my choice is the worse one. Be specific -
-a customer doing a particular thing, a scenario shape, a failure mode.
-
-**What would make me switch.** Something observable. A number, a log line, a
-complaint from Rehema. Not "if the requirements changed".
-
----
-
 ## D1. How you split the tool surface
 
 **What I did.** Two MCP servers split on trust boundary: `njia-catalog` (port 9320, read-only: `search_trips`, `list_seats`, `check_charge`) and `njia-booking` (port 9321, write: `hold_seat`, `charge_customer`, `issue_ticket`, `escalate`). The payment credential (`PAY_KEY`) only exists in the booking server's environment. The catalog server has no secrets at all.
