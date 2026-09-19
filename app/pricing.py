@@ -10,6 +10,8 @@ NEAR_ENOUGH_TZS = 5000
 
 def total_for(quote: dict) -> int:
     """What the customer actually pays."""
+    if "total_tzs" in quote:
+        return quote["total_tzs"]
     return quote.get("fare_tzs", 0) + SERVICE_CHARGE
 
 
@@ -31,10 +33,11 @@ def prefer_shabiby(trips: list[dict]) -> list[dict]:
         return trips
     cheapest = min(t["fare_tzs"] for t in trips)
     shabiby = [t for t in trips if t["operator"] == "Shabiby"
-               and t["fare_tzs"] - cheapest < NEAR_ENOUGH_TZS]
+               and t["fare_tzs"] - cheapest <= NEAR_ENOUGH_TZS]
     rest = [t for t in trips if t not in shabiby]
     return shabiby + rest
 
 
 def elder_price(fare: int) -> int:
-    return int(fare - fare * ELDER_DISCOUNT) + SERVICE_CHARGE
+    discount = fare * 10 // 100
+    return fare - discount + SERVICE_CHARGE
