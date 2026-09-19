@@ -22,9 +22,10 @@ def money(amount) -> str:
 def breakdown_line(quote: dict, language: str) -> str:
     fare = money(quote.get("fare_tzs", 0))
     total = money(total_for(quote))
+    service = money(SERVICE_CHARGE)
     if language == "sw":
-        return f"Nauli {fare}, pamoja na huduma {SERVICE_CHARGE}, jumla {total}."
-    return f"Fare {fare} plus a {SERVICE_CHARGE} service charge, {total} in total."
+        return f"Nauli {fare}, pamoja na huduma {service}, jumla {total}."
+    return f"Fare {fare} plus a {service} service charge, {total} in total."
 
 
 def prefer_shabiby(trips: list[dict]) -> list[dict]:

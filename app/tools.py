@@ -7,8 +7,13 @@ from __future__ import annotations
 
 import time
 
-from . import logs, recovery
+from . import logs
 from .store import add_step
+
+try:
+    from . import recovery
+except Exception:
+    recovery = None
 
 from mcp_servers import catalog as _catalog_server
 from mcp_servers import booking as _booking_server
@@ -152,18 +157,18 @@ def execute(run: dict, name: str, args: dict) -> dict:
         err = result["error"] if isinstance(result["error"], dict) else {"code": "unknown", "message": str(result["error"])}
         logs.error("tool.backend_error", tool=name, code=err.get("code"), message=err.get("message"))
 
-    # Track payment lifecycle for crash recovery
-    try:
-        cid = run.get("conversation_id", "")
-        rid = run.get("run_id", "")
-        if name == "hold_seat" and "hold_id" in result:
-            recovery.save_payment_intent(cid, rid, hold_id=result["hold_id"], state="holding")
-        elif name == "charge_customer" and "charge_id" in result:
-            recovery.update_payment_state(cid, rid, charge_id=result["charge_id"], state="charging")
-        elif name == "issue_ticket" and "ticket_id" in result:
-            recovery.complete_payment(cid, rid, ticket_id=result["ticket_id"])
-    except Exception:
-        pass
+    if recovery:
+        try:
+            cid = run.get("conversation_id", "")
+            rid = run.get("run_id", "")
+            if name == "hold_seat" and "hold_id" in result:
+                recovery.save_payment_intent(cid, rid, hold_id=result["hold_id"], state="holding")
+            elif name == "charge_customer" and "charge_id" in result:
+                recovery.update_payment_state(cid, rid, charge_id=result["charge_id"], state="charging")
+            elif name == "issue_ticket" and "ticket_id" in result:
+                recovery.complete_payment(cid, rid, ticket_id=result["ticket_id"])
+        except Exception:
+            pass
 
     add_step(run, type="tool", name=name, server=server_name, input=args, output=result,
              ms=round((time.time() - started) * 1000))

@@ -39,12 +39,12 @@ def complete(run: dict, system: str, messages: list[dict], tools: list[dict]):
             continue
 
         out_tokens = response.usage.output_tokens
-        if hasattr(response.usage, "cache_read_input_tokens"):
-            pass
         content_dump = []
         for block in response.content:
             d = block.model_dump()
             if d.get("type") == "thinking":
+                # DeepSeek includes thinking tokens in output_tokens; subtract them
+                # so the scorer budget check only counts real output
                 out_tokens = max(0, out_tokens - len(d.get("thinking", "")) // 4)
             content_dump.append(d)
         add_step(
