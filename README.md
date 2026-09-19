@@ -40,6 +40,7 @@ Rehema's console is at http://localhost:9310.
 
 ```
 REQUIREMENTS.md   what the client said. the spec
+DECISIONS.md      six questions about your architecture. you fill this in
 ARCHITECTURE.md   how the last developer described his own work
 AGENTS.md         his notes for whoever, or whatever, picked it up next
 mock/             the fake world: trips, seats, mobile money, WhatsApp.  DO NOT MODIFY
@@ -83,8 +84,8 @@ The probe is not part of the twelve. We run it on your submission too.
 
 ## What you are being asked for
 
-1. **Twelve out of twelve visible, and stay there.** We then run nine scenarios you
-   have not seen, drawn from the same requirements. Special-casing the visible
+1. **Twelve out of twelve visible, and stay there.** We then run eleven scenarios
+   you have not seen, drawn from the same requirements. Special-casing the visible
    twelve will show up immediately.
 2. **Put the tools behind MCP.** The agent talks to the backend over raw HTTP today.
    Stand up your own MCP server - or more than one - in front of `mock/`, and have the
@@ -176,7 +177,18 @@ counts what the backend served and compares. Nothing gets swallowed.
 
 ## What to send back
 
-The repo, plus a `NOTES.md` of about two pages:
+The repo, `DECISIONS.md` filled in, and a `NOTES.md` of about two pages.
+
+`DECISIONS.md` carries the same weight as the notes. It asks about five architectural
+trades and one question about what you would tear up, and **we do not have a preferred
+answer to any of them** - we have built this
+more than one way and neither was obviously right. What we are reading is whether you
+knew you were choosing, what the choice cost you, and what would make you change your
+mind. Two of those decisions have a scenario in the held-back set where your answer is
+the wrong one. Losing a scenario to a trade you predicted and named beats passing it by
+accident.
+
+The notes:
 
 **One.** The diagnosis table:
 
