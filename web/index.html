@@ -58,6 +58,25 @@
     border: 1px dashed var(--warn); color: var(--warn); border-radius: var(--radius);
     padding: 14px 16px; margin-bottom: 16px; font-size: 13px;
   }
+  .taken-over-badge {
+    display: inline-block; background: var(--bad); color: #fff; font-size: 11px;
+    font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-left: 6px;
+    vertical-align: middle; letter-spacing: .3px;
+  }
+  .run .taken-label { color: var(--bad); font-size: 11px; font-weight: 600; }
+  #takeover.active { border-color: var(--bad); color: var(--bad); }
+  .stream-status {
+    color: var(--dim); font-size: 12px; padding: 6px 0 10px; display: flex;
+    align-items: center; gap: 6px;
+  }
+  .stream-status .live-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--good);
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .3; }
+  }
 </style>
 </head>
 <body>
@@ -71,54 +90,144 @@
 <main>
   <aside id="runs"></aside>
   <section id="detail">
-    <div class="todo">
-      This console polls once a second. Wire it to <code>GET /runs/{id}/events</code>
-      so steps appear as they happen, and make Take over actually pause the agent.
-    </div>
     <div class="empty">Pick a run.</div>
   </section>
 </main>
 
 <script>
 let selected = null;
+let eventSource = null;
+let takenOverSet = new Set();
 
 async function loadRuns() {
-  const { runs } = await (await fetch('/runs')).json();
-  const list = document.getElementById('runs');
-  list.innerHTML = runs.reverse().map(r => `
-    <div class="run" data-id="${r.run_id}" aria-selected="${r.run_id === selected}">
-      <div class="who">${r.conversation_id}</div>
-      <div class="meta">${r.status} &middot; ${r.budget.tool_calls} calls</div>
-    </div>`).join('') || '<div class="empty">No runs yet.</div>';
-  list.querySelectorAll('.run').forEach(el =>
-    el.onclick = () => { selected = el.dataset.id; loadRun(); loadRuns(); });
+  try {
+    const { runs } = await (await fetch('/runs')).json();
+    const list = document.getElementById('runs');
+
+    // Track which conversations are taken over
+    runs.forEach(r => { if (r.taken_over) takenOverSet.add(r.conversation_id); });
+
+    list.innerHTML = runs.reverse().map(r => `
+      <div class="run" data-id="${r.run_id}" aria-selected="${r.run_id === selected}">
+        <div class="who">${escapeHtml(r.conversation_id)}${
+          r.taken_over ? '<span class="taken-over-badge">TAKEN OVER</span>' : ''
+        }</div>
+        <div class="meta">${r.status} &middot; ${r.budget.tool_calls} calls${
+          r.taken_over ? ' <span class="taken-label">human control</span>' : ''
+        }</div>
+      </div>`).join('') || '<div class="empty">No runs yet.</div>';
+
+    list.querySelectorAll('.run').forEach(el =>
+      el.onclick = () => {
+        if (selected === el.dataset.id) return;
+        selected = el.dataset.id;
+        subscribeToRun(selected);
+        loadRuns();
+      });
+  } catch (e) {
+    console.error('loadRuns error:', e);
+  }
 }
 
-async function loadRun() {
-  if (!selected) return;
-  const run = await (await fetch(`/runs/${selected}`)).json();
-  document.getElementById('calls').textContent = run.budget.tool_calls;
-  document.getElementById('tokens').textContent = run.budget.input_tokens;
-  document.getElementById('detail').innerHTML = run.steps.map(s => `
-    <div class="step">
+function subscribeToRun(runId) {
+  // Close any existing EventSource
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+
+  const detail = document.getElementById('detail');
+  detail.innerHTML = '<div class="stream-status"><span class="live-dot"></span> Connecting...</div>';
+
+  eventSource = new EventSource(`/runs/${runId}/events`);
+
+  let stepCount = 0;
+
+  eventSource.addEventListener('step', (e) => {
+    const step = JSON.parse(e.data);
+    stepCount++;
+
+    // On first step, clear the status line (but keep it at top)
+    if (stepCount === 1) {
+      detail.innerHTML = '<div class="stream-status"><span class="live-dot"></span> Streaming</div>';
+    }
+
+    const div = document.createElement('div');
+    div.className = 'step';
+    div.innerHTML = `
       <div class="head">
-        <span class="dot ${s.type}"></span>
-        <span class="name">${s.name || s.model || s.type}</span>
-        <span class="ms">${s.ms ? s.ms + 'ms' : ''}</span>
+        <span class="dot ${step.type || ''}"></span>
+        <span class="name">${escapeHtml(step.name || step.model || step.type || '')}</span>
+        <span class="ms">${step.ms ? step.ms + 'ms' : ''}</span>
       </div>
-      <pre>${escapeHtml(JSON.stringify(s.output ?? s.content ?? '', null, 1)).slice(0, 900)}</pre>
-    </div>`).join('') + (run.reply ? `<div class="step"><div class="head">
-      <span class="name">reply</span></div><pre>${escapeHtml(run.reply)}</pre></div>` : '');
+      <pre>${escapeHtml(JSON.stringify(step.output ?? step.content ?? '', null, 1)).slice(0, 900)}</pre>`;
+    detail.appendChild(div);
+    detail.scrollTop = detail.scrollHeight;
+
+    // Update budget counters from step data
+    updateBudgetFromStep(step);
+  });
+
+  eventSource.addEventListener('done', (e) => {
+    const info = JSON.parse(e.data);
+    const statusEl = detail.querySelector('.stream-status');
+    if (statusEl) {
+      statusEl.innerHTML = `Run ${info.status}`;
+      statusEl.querySelector('.live-dot')?.remove();
+    }
+    eventSource.close();
+    eventSource = null;
+    // Refresh run list to get final state
+    loadRuns();
+  });
+
+  eventSource.onerror = () => {
+    const statusEl = detail.querySelector('.stream-status');
+    if (statusEl) {
+      statusEl.innerHTML = 'Connection lost';
+    }
+    eventSource.close();
+    eventSource = null;
+  };
+}
+
+let budgetCalls = 0;
+let budgetTokens = 0;
+
+function updateBudgetFromStep(step) {
+  if (step.type === 'tool' && step.output) {
+    budgetCalls++;
+  }
+  if (step.type === 'llm') {
+    budgetTokens += (step.input_tokens || 0);
+  }
+  document.getElementById('calls').textContent = budgetCalls;
+  document.getElementById('tokens').textContent = budgetTokens;
 }
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
-document.getElementById('takeover').onclick = () =>
-  fetch(`/runs/${selected}/takeover`, { method: 'POST' });
+document.getElementById('takeover').onclick = async () => {
+  if (!selected) return;
+  const btn = document.getElementById('takeover');
+  try {
+    const resp = await fetch(`/runs/${selected}/takeover`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.taken_over) {
+      takenOverSet.add(data.conversation_id);
+      btn.classList.add('active');
+      btn.textContent = 'Taken over';
+      loadRuns();
+    }
+  } catch (e) {
+    console.error('takeover error:', e);
+  }
+};
 
-setInterval(() => { loadRuns(); loadRun(); }, 1000);
+// Poll the run list (sidebar) every 2 seconds
+setInterval(loadRuns, 2000);
 loadRuns();
 </script>
 </body>
